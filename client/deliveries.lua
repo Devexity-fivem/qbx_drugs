@@ -30,19 +30,14 @@ local function getClosestDealer()
     end
 end
 
----@todo Move to ox_inventory Shop
 local function openDealerShop()
     getClosestDealer()
-    local repItems = {}
-    repItems.label = sharedConfig.dealers[currentDealer].name
-    repItems.items = {}
-    repItems.slots = 30
-    for k, _ in pairs(sharedConfig.dealers[currentDealer].products) do
-        if QBX.PlayerData.metadata.dealerrep >= sharedConfig.dealers[currentDealer].products[k].minrep then
-            repItems.items[k] = sharedConfig.dealers[currentDealer].products[k]
-        end
+    if not currentDealer then
+        exports.qbx_core:Notify('No dealer found nearby', 'error')
+        return
     end
-    TriggerServerEvent('inventory:server:OpenInventory', 'shop', 'Dealer_'..sharedConfig.dealers[currentDealer].name, repItems)
+    local dealerName = 'dealer_' .. currentDealer
+    exports.ox_inventory:openInventory('shop', { type = dealerName })
 end
 
 local function knockDoorAnim(home)
@@ -174,7 +169,9 @@ local function deliverStuff()
             if config.useTarget then
                 exports.ox_target:removeZone('drugDeliveryZone')
             else
-                drugDeliveryZone:destroy()
+                if drugDeliveryZone then
+                    drugDeliveryZone:remove()
+                end
             end
         else
             ClearPedTasks(cache.ped)
@@ -198,14 +195,17 @@ function AwaitingInput()
         while waitingKeyPress do
             if not dealerIsHome then
                 if IsControlPressed(0, 38) then
+                    print('^3[DEBUG]^5 Pressed E - knocking door')
                     knockDealerDoor()
                 end
             elseif dealerIsHome then
                 if IsControlJustPressed(0, 38) then
+                    print('^3[DEBUG]^5 Pressed E - opening shop')
                     openDealerShop()
                     waitingKeyPress = false
                 end
                 if IsControlJustPressed(0, 47) then
+                    print('^3[DEBUG]^5 Pressed G - currentDealer:', currentDealer, 'dealerIsHome:', dealerIsHome, 'waitingDelivery:', waitingDelivery)
                     if waitingDelivery then
                         waitingKeyPress = false
                     end
@@ -224,7 +224,7 @@ function InitZones()
         for k, v in pairs(sharedConfig.dealers) do
             ---@todo Move to ox_target
 
-            exports['qb-target']:AddBoxZone('dealer_'..k, vector3(v.coords.x, v.coords.y, v.coords.z), 1.5, 1.5, {
+            exports.ox_target:addBoxZone('dealer_'..k, vector3(v.coords.x, v.coords.y, v.coords.z), 1.5, 1.5, {
                 name = 'dealer_'..k,
                 heading = v.heading,
                 minZ = v.coords.z - 1,
@@ -291,38 +291,29 @@ function InitZones()
             })
         end
     else
-        ---@TODO Move to ox_lib Zoning
-
-        --[[ local dealerPoly = {}
         for k, v in pairs(sharedConfig.dealers) do
-            dealerPoly[#dealerPoly+1] = BoxZone:Create(vector3(v.coords.x, v.coords.y, v.coords.z), 1.5, 1.5, {
-                heading = -20,
-                name='dealer_'..k,
-                debugPoly = false,
-                minZ = v.coords.z - 1,
-                maxZ = v.coords.z + 1,
+            lib.zones.box({
+                name = 'dealer_' .. k,
+                coords = vec3(v.coords.x, v.coords.y, v.coords.z),
+                size = vec3(1.5, 1.5, 2.0),
+                rotation = 0.0,
+                debug = false,
+                onEnter = function()
+                    getClosestDealer()
+                    if not dealerIsHome then
+                        lib.showTextUI(locale('info.knock_button'), { position = 'left-center' })
+                        AwaitingInput()
+                    elseif dealerIsHome then
+                        lib.showTextUI(locale('info.other_dealers_button'), { position = 'left-center' })
+                        AwaitingInput()
+                    end
+                end,
+                onExit = function()
+                    waitingKeyPress = false
+                    lib.hideTextUI()
+                end
             })
         end
-
-        if table.type(dealerPoly) == 'empty' then return end
-
-        dealerCombo = ComboZone:Create(dealerPoly, {name = 'dealerPoly'})
-        dealerCombo:onPlayerInOut(function(isPointInside)
-            if isPointInside then
-                if not dealerIsHome then
-                    lib.showTextUI(locale('info.knock_button'), { position = 'left-center' })
-                    AwaitingInput()
-                elseif dealerIsHome then
-                    lib.showTextUI(locale('info.other_dealers_button'), { position = 'left-center' })
-                    AwaitingInput()
-                end
-            else
-                waitingKeyPress = false
-                lib.hideTextUI()
-            end
-        end) ]]--
-
-        return
     end
 end
 
@@ -377,7 +368,7 @@ RegisterNetEvent('qb-drugs:client:setLocation', function(locationData)
     else
         local inDeliveryZone = false
         drugDeliveryZone = lib.zones.box({
-            coords = vec3(activeDelivery.coords.xyz),
+            coords = activeDelivery.coords,
             size = vec3(1.5, 1.5, 2.0),
             rotation = 0.0,
             debug = false,

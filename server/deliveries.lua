@@ -57,9 +57,9 @@ RegisterNetEvent('qb-drugs:server:successDelivery', function(deliveryData, inTim
     local payout = deliveryData.itemData.payout * itemAmount
     local copsOnline = exports.qbx_core:GetDutyCountType('leo')
     local curRep = player.PlayerData.metadata.dealerrep
-    local invItem = exports.ox_inventory:Search(src, 'count', item)
+    local invItemCount = exports.ox_inventory:Search(src, 'count', item)
     if inTime then
-        if invItem and invItem.amount >= itemAmount then -- on time correct amount
+        if invItemCount and invItemCount >= itemAmount then -- on time correct amount
             exports.ox_inventory:RemoveItem(src, item, itemAmount)
             if copsOnline > 0 then
                 local copModifier = copsOnline * config.policeDeliveryModifier
@@ -85,8 +85,8 @@ RegisterNetEvent('qb-drugs:server:successDelivery', function(deliveryData, inTim
             end)
         else
             exports.qbx_core:Notify(src, locale('error.order_not_right'), 'error')-- on time incorrect amount
-            if invItem then
-                local newItemAmount = invItem.amount
+            if invItemCount then
+                local newItemAmount = invItemCount
                 local modifiedPayout = deliveryData.itemData.payout * newItemAmount
                 exports.ox_inventory:RemoveItem(src, item, newItemAmount)
                 player.Functions.AddMoney('cash', math.floor(modifiedPayout / config.wrongAmountFee))
@@ -101,7 +101,7 @@ RegisterNetEvent('qb-drugs:server:successDelivery', function(deliveryData, inTim
             end)
         end
     else
-        if invItem and invItem.amount >= itemAmount then -- late correct amount
+        if invItemCount and invItemCount >= itemAmount then -- late correct amount
             exports.qbx_core:Notify(src, locale('error.too_late'), 'error')
             exports.ox_inventory:RemoveItem(src, item, itemAmount)
             player.Functions.AddMoney('cash', math.floor(payout / config.overdueDeliveryFee), 'delivery-drugs-too-late')
@@ -114,8 +114,8 @@ RegisterNetEvent('qb-drugs:server:successDelivery', function(deliveryData, inTim
                 end
             end)
         else
-            if invItem then -- late incorrect amount
-                local newItemAmount = invItem.amount
+            if invItemCount then -- late incorrect amount
+                local newItemAmount = invItemCount
                 local modifiedPayout = deliveryData.itemData.payout * newItemAmount
                 exports.qbx_core:Notify(src, locale('error.too_late'), 'error')
                 exports.ox_inventory:RemoveItem(src, item, itemAmount)
@@ -248,6 +248,47 @@ end)
 
 CreateThread(function()
     Wait(500)
+
+    local shopInventory = {}
+    for i, product in ipairs(config.products) do
+        shopInventory[i] = {
+            name = product.name,
+            price = product.price,
+            count = product.amount,
+            slot = i,
+        }
+    end
+
+    exports.ox_inventory:RegisterShop('dealer_default', {
+        name = 'Drug Dealer',
+        inventory = shopInventory,
+        slots = #shopInventory,
+    })
+
+    exports.ox_inventory:registerHook('buyItem', function(payload)
+        local src = payload.source
+        local player = exports.qbx_core:GetPlayer(src)
+        if not player then return false end
+
+        local dealerRep = player.PlayerData.metadata.dealerrep or 0
+
+        -- Find the product by item name to get minrep
+        local product = nil
+        for _, p in ipairs(config.products) do
+            if p.name == payload.itemName then
+                product = p
+                break
+            end
+        end
+
+        if product and dealerRep < (product.minrep or 0) then
+            exports.qbx_core:Notify(src, 'You need ' .. product.minrep .. ' dealer rep to buy this item', 'error')
+            return false
+        end
+
+        return true
+    end)
+
     local dealers = MySQL.query.await('SELECT * FROM dealers')
     if dealers and #dealers ~= 0 then
         for i = 1, #dealers do
@@ -261,6 +302,12 @@ CreateThread(function()
                 time = { min = time.min, max = time.max },
                 products = config.products
             }
+
+            exports.ox_inventory:RegisterShop('dealer_' .. data.name, {
+                name = data.name,
+                inventory = shopInventory,
+                slots = #shopInventory,
+            })
         end
     end
     TriggerClientEvent('qb-drugs:client:RefreshDealers', -1, sharedConfig.dealers)
