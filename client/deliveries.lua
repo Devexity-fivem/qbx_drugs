@@ -195,17 +195,14 @@ function AwaitingInput()
         while waitingKeyPress do
             if not dealerIsHome then
                 if IsControlPressed(0, 38) then
-                    print('^3[DEBUG]^5 Pressed E - knocking door')
                     knockDealerDoor()
                 end
             elseif dealerIsHome then
                 if IsControlJustPressed(0, 38) then
-                    print('^3[DEBUG]^5 Pressed E - opening shop')
                     openDealerShop()
                     waitingKeyPress = false
                 end
                 if IsControlJustPressed(0, 47) then
-                    print('^3[DEBUG]^5 Pressed G - currentDealer:', currentDealer, 'dealerIsHome:', dealerIsHome, 'waitingDelivery:', waitingDelivery)
                     if waitingDelivery then
                         waitingKeyPress = false
                     end
@@ -222,8 +219,6 @@ end
 function InitZones()
     if config.useTarget then
         for k, v in pairs(sharedConfig.dealers) do
-            ---@todo Move to ox_target
-
             exports.ox_target:addBoxZone('dealer_'..k, vector3(v.coords.x, v.coords.y, v.coords.z), 1.5, 1.5, {
                 name = 'dealer_'..k,
                 heading = v.heading,
